@@ -52,3 +52,14 @@ Each processed video generates 3 files:
 - Upgrade image/video quality using paid APIs (Imagen 4, Kling 2.1)
 - Add auto-posting feature (direct upload to YouTube/Instagram)
 - Support multiple video styles/templates
+
+## Troubleshooting & Common Errors
+
+### 1. Gemini API Quota Exhausted (429 RESOURCE_EXHAUSTED) or "Lost Signal"
+If you are using the free tier of the Google Gemini API, you may run into a rate limit error (`429 RESOURCE_EXHAUSTED`). In the dashboard, this often shows up as **"Signal lost"**. 
+
+This happens because the free tier has strict limits on how many requests you can make per minute and per day. The pipeline is designed to automatically wait for 35 seconds and retry if it hits a temporary speed limit. However, if your daily quota is fully exhausted, it will completely skip the video.
+
+**Solution:**
+- **Wait it out:** The quota usually resets at midnight Pacific Time or after a few hours depending on the limit.
+- **Get a new key:** You can generate a fresh API key from Google AI Studio and replace the old one in your `.env` file.

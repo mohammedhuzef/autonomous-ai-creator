@@ -12,12 +12,25 @@ Agla step (Imagen + Kling) is JSON output ko input ke roop mein use karega.
 import requests
 import json
 import os
-from datetime import datetime, timedelta
+import urllib.parse
+from datetime import datetime, timedelta, timezone
+import time
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
-# .env file se API keys load karo (isse keys code mein kabhi nahi likhni padtin)
+import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+import numpy as np
+from PIL import Image
+try:
+    from moviepy import VideoClip  # moviepy 2.x
+except ImportError:
+    from moviepy.editor import VideoClip  # moviepy 1.x (fallback)
+
+# .env file se API keys load karo
 load_dotenv()
 
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -37,7 +50,7 @@ def get_trending_shorts(max_results=5):
     Last 7 din ke most viewed YouTube Shorts dhoondta hai.
     Returns: list of dicts jisme title aur url hai
     """
-    published_after = (datetime.utcnow() - timedelta(days=30)).isoformat("T") + "Z"
+    published_after = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat().replace("+00:00", "Z")
 
     url = "https://www.googleapis.com/youtube/v3/search"
     params = {
@@ -46,30 +59,45 @@ def get_trending_shorts(max_results=5):
         "type": "video",
         "order": "viewCount",
         "publishedAfter": published_after,
-        "maxResults": max_results,
+        "maxResults": 50, # Fetch plenty of videos to ensure we have enough valid ones after filtering
         "key": YOUTUBE_API_KEY,
     }
 
-    response = requests.get(url, params=params)
-    data = response.json()
+    for attempt in range(3):
+        try:
+            response = requests.get(url, params=params, timeout=15)
+            # Will raise HTTPError for bad requests (4xx or 5xx) if not handled properly
+            if response.status_code != 200:
+                data = response.json()
+                if "error" in data:
+                    print(f"YouTube API Error: {data['error']['message']}")
+                    return []
+            
+            response.raise_for_status()
+            data = response.json()
 
-    if "error" in data:
-        print("YouTube API Error:", data["error"]["message"])
-        return []
+            videos = []
+            for item in data.get("items", []):
+                video_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                yt_url = f"https://youtube.com/watch?v={video_id}"
+                videos.append({"title": title, "url": yt_url})
 
-    # DEBUG: agar items nahi mile to poora response dikhao
-    if not data.get("items"):
-        print("DEBUG - Full YouTube response:")
-        print(json.dumps(data, indent=2))
+            # Return exactly the number requested
+            return videos[:max_results]
+            
+        except requests.exceptions.ConnectionError:
+            print(f"Attempt {attempt + 1}: YouTube server se connect nahi ho paaya (Connection Error). Internet connection check karein.")
+            time.sleep(2)
+        except requests.exceptions.Timeout:
+            print(f"Attempt {attempt + 1}: YouTube API timeout. Phir se try kar raha hoon...")
+            time.sleep(2)
+        except Exception as e:
+            print(f"Attempt {attempt + 1}: YouTube Data fetch error - {e}")
+            time.sleep(2)
 
-    videos = []
-    for item in data.get("items", []):
-        video_id = item["id"]["videoId"]
-        title = item["snippet"]["title"]
-        yt_url = f"https://youtube.com/watch?v={video_id}"
-        videos.append({"title": title, "url": yt_url})
-
-    return videos
+    print("Error: YouTube se connection establish nahi ho paya. Kripya apna internet connection aur API key check karein.")
+    return []
 
 
 def analyze_video(youtube_url):
@@ -88,15 +116,29 @@ def analyze_video(youtube_url):
     }
     """
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=types.Content(
-            parts=[
-                types.Part(file_data=types.FileData(file_uri=youtube_url)),
-                types.Part(text=prompt),
-            ]
-        ),
-    )
+    for attempt in range(4):
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=types.Content(
+                    parts=[
+                        types.Part(file_data=types.FileData(file_uri=youtube_url)),
+                        types.Part(text=prompt),
+                    ]
+                ),
+            )
+            break
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                print(f"Gemini rate limit hit (429). Waiting 35s before retry {attempt + 1}/3...")
+                time.sleep(35)
+            else:
+                print(f"Gemini API Exception: {e}")
+                return None
+    else:
+        print("Gemini API failed after multiple attempts due to rate limits.")
+        return None
 
     text = response.text.strip()
     # Kabhi kabhi Gemini ```json fences bhi bhej deta hai, unhe hata dete hain
@@ -115,8 +157,6 @@ def generate_image(prompt, filename="generated_image.png"):
     Pollinations AI se free mein image generate karta hai.
     Koi API key nahi chahiye - seedha URL se image mil jaati hai.
     """
-    import urllib.parse
-
     # Style ko strongly enforce karte hain taaki cartoon/illustration hi bane, realistic nahi
     styled_prompt = (
         f"{prompt}, in the style of a flat vector cartoon illustration, "
@@ -146,14 +186,6 @@ def generate_video(image_path, output_path="output_video.mp4", duration=5, fps=2
     Ken Burns effect: static image pe slow zoom-in animation, video mein convert karta hai.
     Koi external AI service nahi chahiye - sab locally compute hota hai.
     """
-    try:
-        from moviepy import VideoClip  # moviepy 2.x
-    except ImportError:
-        # pyrefly: ignore [missing-import]
-        from moviepy.editor import VideoClip  # moviepy 1.x (fallback)
-    from PIL import Image
-    import numpy as np
-
     img = Image.open(image_path).convert("RGB")
     w, h = img.size
 
@@ -173,32 +205,37 @@ def generate_video(image_path, output_path="output_video.mp4", duration=5, fps=2
     return output_path
 
 
-def process_video(video, index):
+def process_video(video, index, progress_callback=None):
     """Ek single video ko poori pipeline se guzarta hai: analyze -> image -> video"""
-    print("=" * 60)
-    print(f"VIDEO {index}: {video['title']}")
-    print("=" * 60)
+    def report(msg):
+        print(msg)
+        if progress_callback:
+            progress_callback(msg)
+
+    report("=" * 60)
+    report(f"VIDEO {index}: {video['title']}")
+    report("=" * 60)
 
     result = analyze_video(video["url"])
     if not result:
-        print(f"Video {index} skip kiya - Gemini se result nahi mila.\n")
+        report(f"Video {index} skip kiya - Gemini se result nahi mila.\n")
         return None
 
     json_filename = f"output_{index}.json"
     with open(json_filename, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    print(f"JSON save ho gaya: {json_filename}")
+    report(f"JSON save ho gaya: {json_filename}")
 
     image_filename = f"generated_image_{index}.png"
     image_path = generate_image(result["image_prompt"], filename=image_filename)
     if not image_path:
-        print(f"Video {index} - image generate nahi hui, video skip.\n")
+        report(f"Video {index} - image generate nahi hui, video skip.\n")
         return None
-    print(f"Image save ho gayi: {image_path}")
+    report(f"Image save ho gayi: {image_path}")
 
     video_filename = f"output_video_{index}.mp4"
     video_path = generate_video(image_path, output_path=video_filename)
-    print(f"Video save ho gayi: {video_path}\n")
+    report(f"Video save ho gayi: {video_path}\n")
 
     return {"json": json_filename, "image": image_path, "video": video_path}
 

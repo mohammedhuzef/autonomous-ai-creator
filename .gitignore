@@ -1,0 +1,7 @@
+.env
+*.png
+*.mp4
+*.json
+!.env.example
+__pycache__/
+*.pyc

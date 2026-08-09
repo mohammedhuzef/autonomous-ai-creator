@@ -1,0 +1,54 @@
+# Autonomous AI Video Agent
+
+This project discovers trending YouTube Shorts from the last 7-30 days, analyzes them using Google Gemini, and generates a new, original AI-generated cartoon image and short zoom video inspired by that style/theme — the entire process is autonomous, with no manual editing required.
+
+## How the pipeline works
+
+1. **YouTube Data API v3** — Fetches trending Shorts, sorted by view count
+2. **Google Gemini (gemini-3.5-flash)** — Analyzes the video directly from its URL, extracts a scene-by-scene description, and writes new image + video prompts
+3. **Pollinations AI (Flux model)** — Generates a new, original cartoon-style image from Gemini's prompt
+4. **MoviePy (Ken Burns effect)** — Converts that image into a 5-second zoom-in video
+
+## Tools & APIs used
+
+| Component | Tool |
+|---|---|
+| Video discovery | YouTube Data API v3 |
+| Video understanding | Google Gemini API (gemini-3.5-flash) |
+| Image generation | Pollinations AI (free, no API key) |
+| Video generation | MoviePy + PIL (Ken Burns zoom effect) |
+
+> **Note:** The original design planned to use Imagen 4 and Kling 2.1, but due to hackathon time/budget constraints, we used cost-effective, free alternatives instead. The pipeline architecture remains the same — only the providers were swapped — and it can easily be upgraded to paid APIs for production use.
+
+## Setup & how to run
+
+1. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+
+2. Create a `.env` file in the project folder (copy `.env.example` and rename it to `.env`), then add your own API keys:
+   ```
+   YOUTUBE_API_KEY=your_actual_youtube_api_key
+   GEMINI_API_KEY=your_actual_gemini_api_key
+   ```
+
+3. Run the pipeline:
+   ```
+   python pipeline.py
+   ```
+
+> **Security note:** API keys are never hardcoded in the source code. They are loaded from a local `.env` file, which is excluded from version control via `.gitignore`.
+
+## Output
+
+Each processed video generates 3 files:
+- `output_N.json` — Gemini's scene analysis + prompts
+- `generated_image_N.png` — AI-generated cartoon image
+- `output_video_N.mp4` — Final 5-second zoom video
+
+## Future improvements
+
+- Upgrade image/video quality using paid APIs (Imagen 4, Kling 2.1)
+- Add auto-posting feature (direct upload to YouTube/Instagram)
+- Support multiple video styles/templates

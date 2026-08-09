@@ -33,4 +33,25 @@
     *Result:* Rewrote the code so it loops through all 5 videos automatically instead of just testing on one.
 
 11. **Noticed the API keys were sitting directly in the code, which isn't safe if we're pushing to GitHub.**
-    *Result:* Moved the keys into a separate `.env` file, and added `.gitignore` and `.env.example` so the real keys never get uploaded.
+    *Result:* Moved the keys into a separate `.env` file, and added `.gitignore` and `.env.example` so the real keys never get uploaded. 
+
+12. **"The dashboard says 'API Connections'. Change it to 'YouTube Live Sync' and add a retry feature so it doesn't crash on bad internet."**
+    *Result:* Updated the Streamlit UI and added a `try-except` retry block for fetching YouTube data.
+
+13. **"Files aren't generating and the app keeps crashing because of emojis in the video titles."**
+    *Result:* Forced the terminal to use UTF-8 encoding so emojis don't crash the app.
+
+14. **"Gemini is throwing a `429 RESOURCE_EXHAUSTED` limit error. Add a cooldown."**
+    *Result:* Added a 35-second sleep timer and a retry loop in `analyze_video()`.
+
+15. **"It's still failing. I think my entire daily quota is gone. Let's test a different model."**
+    *Result:* Tested `gemini-1.5-flash`, confirmed it's a hard daily limit, and switched back to wait for the reset.
+
+16. **"Add a Troubleshooting section to the Readme explaining this Gemini quota error."**
+    *Result:* Wrote the instructions at the bottom of `Readme.md`.
+
+17. **"I keep getting a `RuntimeError: Event loop is closed` when I refresh the page. Fix it."**
+    *Result:* Wrapped the UI updates in a `try-except` block so it shuts down quietly instead of throwing red errors.
+
+18. **"How do I push all these updates to my GitHub repo if it says 'origin already exists'?"**
+    *Result:* Ran `git pull origin main --rebase` to sync the changes, then pushed everything successfully.

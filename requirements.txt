@@ -4,3 +4,4 @@ moviepy
 pillow
 numpy
 python-dotenv
+streamlit

@@ -1,5 +1,6 @@
 .env
 *.png
+!nova_thumbnail.png
 *.mp4
 *.json
 !.env.example
